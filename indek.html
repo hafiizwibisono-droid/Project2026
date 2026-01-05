@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistem Saham IDX</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #0b0e11;
+    color: #fff;
+}
+header {
+    background: #000;
+    padding: 15px 30px;
+    display: flex;
+    justify-content: space-between;
+}
+.logo {
+    color: #f0b90b;
+    font-size: 22px;
+    font-weight: bold;
+}
+.container {
+    padding: 30px;
+}
+.card {
+    background: #161a1e;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 30px;
+}
+input, button {
+    padding: 10px;
+    border-radius: 6px;
+    border: none;
+    margin: 5px 0;
+}
+button {
+    background: #f0b90b;
+    cursor: pointer;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+th, td {
+    padding: 12px;
+    text-align: center;
+}
+th {
+    background: #1f2937;
+}
+tr:hover {
+    background: #1f2937;
+    cursor: pointer;
+}
+.green { color: #16c784; }
+.red { color: #ea3943; }
+</style>
+</head>
+
+<body>
+
+<header>
+    <div class="logo">IDX STOCK SYSTEM</div>
+    <div id="userStatus"></div>
+</header>
+
+<div class="container">
+
+<!-- LOGIN -->
+<div class="card" id="loginBox">
+    <h2>Login User</h2>
+    <input type="text" id="username" placeholder="Username">
+    <button onclick="login()">Login</button>
+</div>
+
+<!-- MARKET -->
+<div class="card" id="marketBox" style="display:none">
+<h2>Market Saham Indonesia</h2>
+<table>
+<thead>
+<tr>
+    <th>Kode</th>
+    <th>Nama</th>
+    <th>Harga</th>
+    <th>Aksi</th>
+</tr>
+</thead>
+<tbody id="market"></tbody>
+</table>
+</div>
+
+<!-- PORTFOLIO -->
+<div class="card" id="portfolioBox" style="display:none">
+<h2>Portfolio Saya</h2>
+<table>
+<thead>
+<tr>
+    <th>Kode</th>
+    <th>Lot</th>
+</tr>
+</thead>
+<tbody id="portfolio"></tbody>
+</table>
+</div>
+
+<!-- CHART -->
+<div class="card" id="chartBox" style="display:none">
+<h2 id="chartTitle">Chart BBCA</h2>
+<div id="tvchart"></div>
+</div>
+
+</div>
+
+<script src="https://s3.tradingview.com/tv.js"></script>
+<script>
+const stocks = [
+    { symbol: "BBCA", name: "Bank Central Asia", price: 9800 },
+    { symbol: "BBRI", name: "Bank Rakyat Indonesia", price: 5200 },
+    { symbol: "TLKM", name: "Telkom Indonesia", price: 4000 },
+    { symbol: "ASII", name: "Astra International", price: 6200 },
+    { symbol: "UNVR", name: "Unilever Indonesia", price: 3800 }
+];
+
+let portfolio = JSON.parse(localStorage.getItem("portfolio")) || [];
+
+function login() {
+    const user = document.getElementById("username").value;
+    if (!user) return alert("Isi username!");
+    localStorage.setItem("user", user);
+    init();
+}
+
+function init() {
+    const user = localStorage.getItem("user");
+    if (!user) return;
+
+    document.getElementById("loginBox").style.display = "none";
+    document.getElementById("marketBox").style.display = "block";
+    document.getElementById("portfolioBox").style.display = "block";
+    document.getElementById("chartBox").style.display = "block";
+    document.getElementById("userStatus").innerText = "Login: " + user;
+
+    renderMarket();
+    renderPortfolio();
+    loadChart("BBCA");
+}
+
+function renderMarket() {
+    const market = document.getElementById("market");
+    market.innerHTML = "";
+    stocks.forEach(s => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${s.symbol}</td>
+            <td>${s.name}</td>
+            <td>Rp ${s.price.toLocaleString()}</td>
+            <td><button onclick="buy('${s.symbol}')">Beli</button></td>
+        `;
+        tr.onclick = () => loadChart(s.symbol);
+        market.appendChild(tr);
+    });
+}
+
+function buy(symbol) {
+    const lot = prompt("Beli berapa lot?");
+    if (!lot) return;
+    portfolio.push({ symbol, lot });
+    localStorage.setItem("portfolio", JSON.stringify(portfolio));
+    renderPortfolio();
+}
+
+function renderPortfolio() {
+    const port = document.getElementById("portfolio");
+    port.innerHTML = "";
+    portfolio.forEach(p => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${p.symbol}</td><td>${p.lot}</td>`;
+        port.appendChild(tr);
+    });
+}
+
+function loadChart(symbol) {
+    document.getElementById("tvchart").innerHTML = "";
+    new TradingView.widget({
+        width: "100%",
+        height: 500,
+        symbol: "IDX:" + symbol,
+        interval: "15",
+        timezone: "Asia/Jakarta",
+        theme: "dark",
+        container_id: "tvchart"
+    });
+    document.getElementById("chartTitle").innerText = "Chart " + symbol;
+}
+
+init();
+</script>
+
+</body>
+</html>
