@@ -1,0 +1,179 @@
+<?php
+session_start();
+
+// ===== DATABASE CONFIG =====
+$host = "localhost";
+$db = "forex_simulator";
+$user = "root";
+$pass = ""; // sesuaikan password MySQL
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8", $user, $pass);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (PDOException $e) {
+    die("Koneksi gagal: " . $e->getMessage());
+}
+
+// ===== HANDLE REGISTER =====
+if(isset($_POST['register'])){
+    $username = $_POST['username'];
+    $password = password_hash($_POST['password'], PASSWORD_BCRYPT);
+    $stmt = $pdo->prepare("INSERT INTO users(username,password) VALUES(?,?)");
+    try{
+        $stmt->execute([$username,$password]);
+        $success = "Registrasi berhasil! Silahkan login.";
+    } catch (Exception $e){
+        $error = "Username sudah digunakan!";
+    }
+}
+
+// ===== HANDLE LOGIN =====
+if(isset($_POST['login'])){
+    $username = $_POST['username'];
+    $password = $_POST['password'];
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE username=?");
+    $stmt->execute([$username]);
+    $user = $stmt->fetch();
+    if($user && password_verify($password, $user['password'])){
+        $_SESSION['user_id'] = $user['id'];
+    } else {
+        $error = "Login gagal!";
+    }
+}
+
+// ===== HANDLE LOGOUT =====
+if(isset($_GET['logout'])){
+    session_destroy();
+    header("Location: forex_simulator.php");
+    exit;
+}
+
+// ===== HANDLE TRADE (BUY/SELL) =====
+if(isset($_POST['trade']) && isset($_SESSION['user_id'])){
+    $symbol = $_POST['symbol'];
+    $lot = floatval($_POST['lot']);
+    $type = $_POST['type'];
+
+    $stmt = $pdo->prepare("SELECT price FROM forex_pairs WHERE symbol=?");
+    $stmt->execute([$symbol]);
+    $price = $stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT balance FROM users WHERE id=?");
+    $stmt->execute([$_SESSION['user_id']]);
+    $balance = $stmt->fetchColumn();
+
+    $cost = $lot * $price;
+    $pnl = ($type=='SELL') ? $lot*$price*0.01 : 0; // simulasi sederhana
+
+    if($type=='BUY' && $balance<$cost) $error="Saldo tidak cukup!";
+    else {
+        $new_balance = ($type=='BUY') ? $balance-$cost : $balance+$cost;
+        $pdo->prepare("UPDATE users SET balance=? WHERE id=?")->execute([$new_balance,$_SESSION['user_id']]);
+        $pdo->prepare("INSERT INTO trades(user_id,symbol,type,lot,price,pnl) VALUES(?,?,?,?,?,?)")
+            ->execute([$_SESSION['user_id'],$symbol,$type,$lot,$price,$pnl]);
+        header("Location: forex_simulator.php");
+        exit;
+    }
+}
+
+// ===== USER DASHBOARD =====
+if(isset($_SESSION['user_id'])){
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE id=?");
+    $stmt->execute([$_SESSION['user_id']]);
+    $user = $stmt->fetch();
+
+    $market = $pdo->query("SELECT * FROM forex_pairs")->fetchAll(PDO::FETCH_ASSOC);
+    $stmt = $pdo->prepare("SELECT * FROM trades WHERE user_id=? ORDER BY created_at DESC");
+    $stmt->execute([$user['id']]);
+    $portfolio = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+?>
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forex Simulator All-in-One</title>
+<style>
+body{background:#0b0e11;color:#fff;font-family:Arial;padding:20px;}
+form,input,button{padding:10px;margin:5px 0;border-radius:5px;border:none;}
+button{background:#f0b90b;color:#000;cursor:pointer;}
+table{width:100%;border-collapse:collapse;margin-top:20px;}
+th,td{padding:10px;text-align:center;}
+th{background:#1f2937;}
+tr:hover{background:#161a1e;}
+p{color:red;}
+.success{color:green;}
+</style>
+</head>
+<body>
+
+<?php if(!isset($_SESSION['user_id'])): ?>
+    <h2>Forex Simulator Login / Register</h2>
+    <form method="POST">
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button name="login">Login</button>
+        <button name="register">Register</button>
+    </form>
+    <?php if(isset($error)) echo "<p>$error</p>"; ?>
+    <?php if(isset($success)) echo "<p class='success'>$success</p>"; ?>
+<?php else: ?>
+    <h2>Selamat datang, <?= $user['username'] ?></h2>
+    <p>Balance: <?= number_format($user['balance'],2) ?> USD</p>
+    <a href="?logout=1">Logout</a>
+
+    <h3>Market Forex</h3>
+    <table>
+        <tr><th>Pair</th><th>Harga</th><th>Aksi</th></tr>
+        <?php foreach($market as $fx): ?>
+        <tr>
+            <td><?= $fx['symbol'] ?></td>
+            <td><?= $fx['price'] ?></td>
+            <td>
+                <form method="POST">
+                    <input type="hidden" name="symbol" value="<?= $fx['symbol'] ?>">
+                    <input type="number" step="0.01" name="lot" placeholder="Lot" required>
+                    <button name="trade" value="1" type="submit" formaction="?type=BUY">BUY</button>
+                    <button name="trade" value="1" type="submit" formaction="?type=SELL">SELL</button>
+                    <input type="hidden" name="type" value="BUY">
+                </form>
+            </td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h3>Portfolio & Riwayat Trading</h3>
+    <table>
+        <tr><th>Pair</th><th>Type</th><th>Lot</th><th>Price</th><th>P/L</th><th>Waktu</th></tr>
+        <?php foreach($portfolio as $p): ?>
+        <tr>
+            <td><?= $p['symbol'] ?></td>
+            <td><?= $p['type'] ?></td>
+            <td><?= $p['lot'] ?></td>
+            <td><?= $p['price'] ?></td>
+            <td><?= $p['pnl'] ?></td>
+            <td><?= $p['created_at'] ?></td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h3>Chart Forex (TradingView)</h3>
+    <div id="tvchart" style="height:500px"></div>
+    <script src="https://s3.tradingview.com/tv.js"></script>
+    <script>
+    new TradingView.widget({
+      width:"100%",
+      height:500,
+      symbol:"FX:EURUSD",
+      interval:"15",
+      timezone:"Asia/Jakarta",
+      theme:"dark",
+      container_id:"tvchart"
+    });
+    </script>
+
+<?php endif; ?>
+</body>
+</html>
